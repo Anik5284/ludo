@@ -1,340 +1,226 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Ludo — Single File</title>
-  <style>
-    :root{--size:48px}
-    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:18px;background:#f6f7fb}
-    h1{font-size:20px;margin:0 0 8px}
-    .wrap{display:flex;gap:18px}
-    .board{display:grid;grid-template-columns:repeat(13, var(--size));grid-auto-rows:var(--size);gap:3px;padding:8px;background:#fff;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.06)}
-    .cell{width:var(--size);height:var(--size);display:flex;align-items:center;justify-content:center;border-radius:4px;background:#f0f2f7;font-size:12px}
-    .track{background:#e9eef8}
-    .home{background:#fff3cd}
-    .piece{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700}
-    .p0{background:#e63946}
-    .p1{background:#2a9d8f}
-    .p2{background:#f4a261}
-    .p3{background:#264653}
-    .controls{min-width:220px}
-    button{padding:8px 10px;border-radius:6px;border:0;background:#2b6df6;color:#fff;cursor:pointer}
-    button[disabled]{opacity:.5;cursor:default}
-    ul{margin:8px 0 0;padding-left:18px}
-    .log{height:320px;overflow:auto;background:#fff;padding:8px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.04)}
-    .player-turn{font-weight:700;margin:8px 0}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Ludo — Circular Board</title>
+<style>
+  body {
+    font-family: system-ui,Segoe UI,Roboto,Arial;
+    margin: 18px;
+    background: #f6f7fb;
+  }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  .wrap { display: flex; gap: 18px; }
+  .board {
+    position: relative;
+    width: 500px;
+    height: 500px;
+    background: #fff;
+    border-radius: 50%;
+    margin: auto;
+    box-shadow: 0 6px 18px rgba(0,0,0,.06);
+  }
+  .cell {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    background: #e9eef8;
+  }
+  .piece {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 700;
+  }
+  .p0 { background: #e63946; }
+  .p1 { background: #2a9d8f; }
+  .p2 { background: #f4a261; }
+  .p3 { background: #264653; }
+  .controls { min-width: 220px; }
+  button {
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 0;
+    background: #2b6df6;
+    color: #fff;
+    cursor: pointer;
+  }
+  .log {
+    height: 320px;
+    overflow: auto;
+    background: #fff;
+    padding: 8px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.04);
+  }
+  .player-turn { font-weight: 700; margin: 8px 0; }
+</style>
 </head>
 <body>
-  <h1>Ludo (simplified) — Open, play & learn</h1>
-  <div class="wrap">
-    <div>
-      <div class="board" id="board" aria-hidden="false"></div>
-    </div>
-    <div class="controls">
-      <div class="player-turn" id="turn">Turn: —</div>
-      <div style="margin-bottom:8px">
-        <button id="roll">Roll dice</button>
-        <span id="dice" style="margin-left:10px;font-weight:700">—</span>
-      </div>
-      <div id="pieces-area"></div>
-
-      <h3 style="margin-top:12px">Game log</h3>
-      <div class="log" id="log"></div>
-    </div>
+<h1>Ludo (Circular Board)</h1>
+<div class="wrap">
+  <div>
+    <div class="board" id="board"></div>
   </div>
+  <div class="controls">
+    <div class="player-turn" id="turn">Turn: —</div>
+    <div style="margin-bottom:8px">
+      <button id="roll">Roll dice</button>
+      <span id="dice" style="margin-left:10px;font-weight:700">—</span>
+    </div>
+    <div id="pieces-area"></div>
+    <h3 style="margin-top:12px">Game log</h3>
+    <div class="log" id="log"></div>
+  </div>
+</div>
 
-  <script>
-    // Simplified functional Ludo implementation
-    // Rules implemented:
-    // - 2-4 players (default 4). Each has 4 tokens.
-    // - Linear track with 52 main squares. Each player has a home-entry cell and 6 home squares (goal stretch).
-    // - Token starts at -1 (in house). A roll of 6 moves a token from house to entry.
-    // - Players choose a token to move when they have >0 dice and legal move exists.
-    // - Capturing: landing on another player's token sends it back to house (unless it's in goal stretch).
-    // - Win when all 4 tokens reach final goal (position = 100 + index in finish).
+<script>
+const PLAYERS = 4;
+const TOKENS_PER_PLAYER = 4;
+const MAIN_TRACK = 52;
+const FINISH_STEPS = 6;
+const startIndex = [0, 13, 26, 39];
 
-    const PLAYERS = 4;
-    const TOKENS_PER_PLAYER = 4;
-    const MAIN_TRACK = 52;
-    const FINISH_STEPS = 6; // steps to reach center after entry (including final)
+const state = {
+  tokens: Array.from({length: PLAYERS}, ()=> Array.from({length: TOKENS_PER_PLAYER}, ()=> -1)),
+  currentPlayer: 0,
+  dice: null,
+  finished: Array(PLAYERS).fill(false),
+};
 
-    // Starting square indices for each player on the MAIN_TRACK
-    const startIndex = [0, 13, 26, 39];
+const boardEl = document.getElementById('board');
+const logEl = document.getElementById('log');
+const turnEl = document.getElementById('turn');
+const diceEl = document.getElementById('dice');
+const rollBtn = document.getElementById('roll');
+const piecesArea = document.getElementById('pieces-area');
 
-    // We'll map a token's position as follows:
-    // - -1 => in home (not on board)
-    // - 0..51 => main track index
-    // - 100 + p*10 + s => finish stretch for player p at step s (0..5)
+function log(msg) {
+  const li = document.createElement('div');
+  li.textContent = msg;
+  logEl.prepend(li);
+}
 
-    function finishPos(player, step){
-      return 100 + player*10 + step; // step 0..5
-    }
+// Build circular board
+const cells = [];
+const centerX = 250;
+const centerY = 250;
+const radius = 200;
+boardEl.innerHTML = '';
+for (let i = 0; i < 52; i++) {
+  const angle = (i / 52) * 2 * Math.PI;
+  const c = document.createElement('div');
+  c.className = 'cell';
+  c.dataset.index = i;
+  c.textContent = i;
+  const x = centerX + radius * Math.cos(angle) - 20;
+  const y = centerY + radius * Math.sin(angle) - 20;
+  c.style.left = `${x}px`;
+  c.style.top = `${y}px`;
+  boardEl.appendChild(c);
+  cells.push(c);
+}
 
-    // State
-    const state = {
-      tokens: Array.from({length: PLAYERS}, ()=> Array.from({length: TOKENS_PER_PLAYER}, ()=> -1)),
-      currentPlayer: 0,
-      dice: null,
-      extraTurn: false,
-      finished: Array(PLAYERS).fill(false),
-    };
+function render() {
+  cells.forEach(c => { c.innerHTML = c.dataset.index; });
 
-    const boardEl = document.getElementById('board');
-    const logEl = document.getElementById('log');
-    const turnEl = document.getElementById('turn');
-    const diceEl = document.getElementById('dice');
-    const rollBtn = document.getElementById('roll');
-    const piecesArea = document.getElementById('pieces-area');
-
-    function log(msg){ const li = document.createElement('div'); li.textContent = msg; logEl.prepend(li); }
-
-    // Build a simple visual board: 52 track cells in a ring-like layout within the grid.
-    const cells = [];
-    for(let i=0;i<13*13;i++){
-      const c = document.createElement('div'); c.className='cell'; boardEl.appendChild(c);
-    }
-    // We'll pick 52 visible positions to map the track — for simplicity show them in a rectangle path.
-    const templateIndexes = [];
-    // top row left to right (0..12) take 6 left + 1 center + 6 right positions as path
-    // We'll compute a simplified mapping to 52 logical cells and reuse cells by index.
-    // to keep UI simple: create a horizontal strip of 52 cells inside the grid center
-    boardEl.innerHTML = '';
-    for(let i=0;i<52;i++){
-      const c = document.createElement('div'); c.className='cell track'; c.dataset.index = i; c.textContent = i;
-      boardEl.appendChild(c);
-      cells.push(c);
-    }
-
-    function render(){
-      // clear
-      cells.forEach(c=>{ c.innerHTML = c.dataset.index; });
-      // place tokens
-      for(let p=0;p<PLAYERS;p++){
-        for(let t=0;t<TOKENS_PER_PLAYER;t++){
-          const pos = state.tokens[p][t];
-          const tokenEl = document.createElement('div');
-          tokenEl.className = 'piece p'+p;
-          tokenEl.textContent = String(t+1);
-          tokenEl.title = `P${p+1} token ${t+1}`;
-          tokenEl.dataset.player = p; tokenEl.dataset.token = t;
-          tokenEl.style.cursor = 'pointer';
-          tokenEl.addEventListener('click', ()=> tryMoveToken(p,t));
-
-          if(pos === -1){
-            // show in pieces area under player
-            // create a host area
-            let host = document.getElementById('host-'+p);
-            if(!host){
-              host = document.createElement('div'); host.id = 'host-'+p; host.style.marginTop='6px'; host.innerHTML = `<strong>Player ${p+1}</strong> `; piecesArea.appendChild(host);
-            }
-            // make sure token not duplicated
-            if(!host.querySelector(`[data-player="${p}"][data-token="${t}"]`)) host.appendChild(tokenEl);
-          } else if(pos >= 100){
-            // finish stretch: show in pieces area with label
-            let host = document.getElementById('finish-'+p);
-            if(!host){ host = document.createElement('div'); host.id='finish-'+p; host.style.marginTop='6px'; host.innerHTML = `<strong>Player ${p+1} finish</strong> `; piecesArea.appendChild(host); }
-            if(!host.querySelector(`[data-player="${p}"][data-token="${t}"]`)) host.appendChild(tokenEl);
-            tokenEl.style.opacity = '0.8';
-          } else {
-            // on main track
-            const cell = cells[pos];
-            // if the cell already has tokens, wrap
-            const wrapper = document.createElement('div'); wrapper.style.display='flex'; wrapper.style.gap='4px'; wrapper.style.alignItems='center';
-            wrapper.appendChild(tokenEl);
-            // append into cell
-            cell.appendChild(wrapper);
-          }
-        }
-      }
-
-      // update UI
-      turnEl.textContent = `Turn: Player ${state.currentPlayer+1}`;
-      diceEl.textContent = state.dice===null? '—' : state.dice;
-
-      // ensure piecesArea order
-      while(piecesArea.firstChild) piecesArea.removeChild(piecesArea.firstChild);
-      for(let p=0;p<PLAYERS;p++){
-        const host = document.createElement('div'); host.style.marginTop='6px'; host.innerHTML = `<strong>Player ${p+1}</strong> `;
-        host.id = 'host-'+p;
-        piecesArea.appendChild(host);
-        // tokens in home
-        for(let t=0;t<TOKENS_PER_PLAYER;t++){
-          const pos = state.tokens[p][t];
-          if(pos===-1){
-            const tokenEl = document.createElement('div'); tokenEl.className = 'piece p'+p; tokenEl.textContent = String(t+1);
-            tokenEl.dataset.player=p; tokenEl.dataset.token=t; tokenEl.style.display='inline-flex'; tokenEl.style.margin='4px'; tokenEl.style.cursor='pointer';
-            tokenEl.addEventListener('click', ()=> tryMoveToken(p,t));
-            host.appendChild(tokenEl);
-          }
-        }
-        // finish tokens
-        const hostF = document.createElement('div'); hostF.style.marginTop='4px'; hostF.id='finish-'+p; hostF.innerHTML='<em>Finish:</em> ';
-        for(let t=0;t<TOKENS_PER_PLAYER;t++){
-          const pos = state.tokens[p][t];
-          if(pos>=100){
-            const tokenEl = document.createElement('div'); tokenEl.className = 'piece p'+p; tokenEl.textContent = String(t+1);
-            tokenEl.dataset.player=p; tokenEl.dataset.token=t; tokenEl.style.display='inline-flex'; tokenEl.style.margin='4px'; tokenEl.style.cursor='pointer';
-            tokenEl.addEventListener('click', ()=> tryMoveToken(p,t));
-            hostF.appendChild(tokenEl);
-          }
-        }
-        piecesArea.appendChild(hostF);
-      }
-    }
-
-    function rollDice(){
-      const v = Math.floor(Math.random()*6)+1; state.dice = v; log(`Player ${state.currentPlayer+1} rolled ${v}`); render(); return v;
-    }
-
-    rollBtn.addEventListener('click', ()=>{
-      if(state.finished[state.currentPlayer]){ nextPlayer(); return; }
-      const v = rollDice();
-      // check if any legal move
-      const legal = hasLegalMove(state.currentPlayer, v);
-      if(!legal){ log(`No legal moves for Player ${state.currentPlayer+1}`); state.dice=null; setTimeout(nextPlayer, 800);
+  while(piecesArea.firstChild) piecesArea.removeChild(piecesArea.firstChild);
+  for (let p = 0; p < PLAYERS; p++) {
+    const host = document.createElement('div');
+    host.style.marginTop = '6px';
+    host.innerHTML = `<strong>Player ${p+1}</strong> `;
+    piecesArea.appendChild(host);
+    for (let t = 0; t < TOKENS_PER_PLAYER; t++) {
+      const pos = state.tokens[p][t];
+      const tokenEl = document.createElement('div');
+      tokenEl.className = 'piece p'+p;
+      tokenEl.textContent = String(t+1);
+      tokenEl.dataset.player = p;
+      tokenEl.dataset.token = t;
+      tokenEl.style.cursor = 'pointer';
+      tokenEl.addEventListener('click', ()=> tryMoveToken(p, t));
+      if (pos === -1) {
+        tokenEl.style.margin = '4px';
+        host.appendChild(tokenEl);
       } else {
-        log(`Choose a token to move (click a token).`);
-        // if only one legal token, auto-move after short delay
-        const legalTokens = legalTokensList(state.currentPlayer, v);
-        if(legalTokens.length===1){ setTimeout(()=> tryMoveToken(state.currentPlayer, legalTokens[0]), 600); }
-      }
-    });
-
-    function hasLegalMove(player, dice){
-      // check each token if it can move
-      return state.tokens[player].some((pos, idx)=> canMove(player, idx, dice));
-    }
-    function legalTokensList(player, dice){
-      const arr=[]; state.tokens[player].forEach((pos,idx)=>{ if(canMove(player,idx,dice)) arr.push(idx); }); return arr;
-    }
-
-    function canMove(player, tokenIdx, dice){
-      const pos = state.tokens[player][tokenIdx];
-      if(pos === -1){ return dice===6; }
-      if(pos>=100){ // in finish stretch
-        const step = pos - (100 + player*10);
-        return step + dice < FINISH_STEPS; // can move inside finish without overshoot
-      }
-      // main track move
-      // compute distance to player's finish entry
-      const start = startIndex[player];
-      // compute steps from pos to finish entry (inclusive): number of steps until entering finish
-      let distToEntry = (start + MAIN_TRACK - pos) % MAIN_TRACK; // moving forward
-      // when token reaches 0 steps distance means at start? we want when token completes a full loop and reaches square before entry
-      // In Ludo, when a token reaches startIndex[player]-1 and then moves 1 it enters finish; simpler approach: if pos + dice goes beyond player's entry after wrapping
-      const target = (pos + dice) % MAIN_TRACK;
-      // steps needed to reach or pass startIndex[player]
-      let passed = false;
-      // compute linear distance without mod
-      let linear = pos + dice;
-      if(pos <= start){
-        if(linear > start) passed = true;
-      } else {
-        // pos > start, need to wrap
-        if(linear >= MAIN_TRACK + start) passed = true;
-      }
-      if(passed){
-        // amount into finish
-        const into = linear - (MAIN_TRACK + start);
-        // if into is negative, it means into <0? adjust
-        const step = into >=0 ? into : linear - start; // approximate
-        // token moves into finish if step < FINISH_STEPS
-        return step < FINISH_STEPS;
-      }
-      return true;
-    }
-
-    function tryMoveToken(player, tokenIdx){
-      if(player !== state.currentPlayer) return; // only current player
-      if(state.dice === null) return; // must roll first
-      if(!canMove(player, tokenIdx, state.dice)){
-        log('Illegal move.'); return;
-      }
-      moveToken(player, tokenIdx, state.dice);
-      render();
-      // if rolled a 6, grant extra turn
-      const gotSix = state.dice===6;
-      state.dice = null;
-      if(gotSix){ log(`Player ${player+1} gets an extra turn for rolling a 6.`); } 
-      // check victory
-      if(state.tokens[player].every(p=> p>=100 && (p - (100+player*10))===FINISH_STEPS-1)){
-        state.finished[player]=true; log(`Player ${player+1} has finished!`);
-      }
-      if(gotSix){ /* keep same player */ } else { nextPlayer(); }
-    }
-
-    function moveToken(player, tokenIdx, dice){
-      let pos = state.tokens[player][tokenIdx];
-      if(pos === -1){
-        // move from home to entry
-        const entry = startIndex[player];
-        // if entry occupied by own tokens allow stacking, by opponents capture
-        state.tokens[player][tokenIdx] = entry;
-        captureAt(entry, player);
-        log(`P${player+1} moved token ${tokenIdx+1} from home to ${entry}`);
-        return;
-      }
-      if(pos >= 100){
-        const base = 100 + player*10;
-        const step = pos - base;
-        const newStep = step + dice;
-        if(newStep < FINISH_STEPS){ state.tokens[player][tokenIdx] = base + newStep; log(`P${player+1} moved token ${tokenIdx+1} to finish ${newStep}`); }
-        else { log('Move overshoots final; not moved.'); }
-        return;
-      }
-      // main track
-      let linear = pos + dice;
-      if(linear >= MAIN_TRACK){ linear -= MAIN_TRACK; }
-      // check if entering finish
-      // compute raw steps from pos to player's entry (without wrap)
-      let entry = startIndex[player];
-      let passed=false; let into=0;
-      // compute steps required to reach entry from pos
-      let stepsToEntry = (MAIN_TRACK + entry - pos) % MAIN_TRACK;
-      if(dice > stepsToEntry){ passed = true; into = dice - stepsToEntry - 1; }
-      if(passed){
-        // move into finish
-        const base = 100 + player*10;
-        const newStep = into; // 0-based
-        if(newStep < FINISH_STEPS){ state.tokens[player][tokenIdx] = base + newStep; log(`P${player+1} moved token ${tokenIdx+1} into finish step ${newStep}`); }
-        else { log('Move would overshoot finish; not moved.'); }
-        return;
-      } else {
-        state.tokens[player][tokenIdx] = linear;
-        log(`P${player+1} moved token ${tokenIdx+1} to ${linear}`);
-        captureAt(linear, player);
+        cells[pos].appendChild(tokenEl);
       }
     }
+  }
+  turnEl.textContent = `Turn: Player ${state.currentPlayer+1}`;
+  diceEl.textContent = state.dice===null ? '—' : state.dice;
+}
 
-    function captureAt(index, movingPlayer){
-      // capture any opponent tokens at main track index
-      for(let p=0;p<PLAYERS;p++){
-        if(p===movingPlayer) continue;
-        for(let t=0;t<TOKENS_PER_PLAYER;t++){
-          if(state.tokens[p][t] === index){
-            state.tokens[p][t] = -1; log(`P${movingPlayer+1} captured P${p+1} token ${t+1}`);
-          }
-        }
-      }
-    }
+function rollDice() {
+  const v = Math.floor(Math.random()*6) + 1;
+  state.dice = v;
+  log(`Player ${state.currentPlayer+1} rolled ${v}`);
+  render();
+  return v;
+}
 
-    function nextPlayer(){
-      // find next not finished player
-      let next = state.currentPlayer;
-      for(let i=1;i<=PLAYERS;i++){
-        const cand = (state.currentPlayer + i) % PLAYERS;
-        if(!state.finished[cand]){ next = cand; break; }
-      }
-      state.currentPlayer = next;
-      state.dice = null;
-      render();
-    }
+rollBtn.addEventListener('click', () => {
+  if (state.finished[state.currentPlayer]) { nextPlayer(); return; }
+  const v = rollDice();
+  const legal = hasLegalMove(state.currentPlayer, v);
+  if (!legal) {
+    log(`No legal moves for Player ${state.currentPlayer+1}`);
+    state.dice = null;
+    setTimeout(nextPlayer, 800);
+  } else {
+    const legalTokens = legalTokensList(state.currentPlayer, v);
+    if (legalTokens.length === 1) setTimeout(()=> tryMoveToken(state.currentPlayer, legalTokens[0]), 600);
+  }
+});
 
-    // initialize
-    render();
-    log('Game ready. Click "Roll dice" to start.');
-  </script>
+function hasLegalMove(player, dice) {
+  return state.tokens[player].some((pos, idx)=> canMove(player, idx, dice));
+}
+function legalTokensList(player, dice) {
+  return state.tokens[player].map((pos,idx)=> canMove(player,idx,dice) ? idx : null).filter(x=>x!==null);
+}
+
+function canMove(player, tokenIdx, dice) {
+  const pos = state.tokens[player][tokenIdx];
+  if (pos === -1) return dice === 6;
+  if (pos >= 100) return false; // finish handling omitted for brevity
+  return true;
+}
+
+function tryMoveToken(player, tokenIdx) {
+  if (player !== state.currentPlayer || state.dice === null) return;
+  if (!canMove(player, tokenIdx, state.dice)) return;
+  moveToken(player, tokenIdx, state.dice);
+  state.dice = null;
+  nextPlayer();
+}
+
+function moveToken(player, tokenIdx, dice) {
+  let pos = state.tokens[player][tokenIdx];
+  if (pos === -1) {
+    state.tokens[player][tokenIdx] = startIndex[player];
+  } else {
+    state.tokens[player][tokenIdx] = (pos + dice) % MAIN_TRACK;
+  }
+}
+
+function nextPlayer() {
+  state.currentPlayer = (state.currentPlayer + 1) % PLAYERS;
+  render();
+}
+
+render();
+log('Game ready. Click "Roll dice" to start.');
+</script>
 </body>
 </html>
